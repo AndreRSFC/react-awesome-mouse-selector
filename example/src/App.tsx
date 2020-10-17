@@ -1,7 +1,6 @@
 import React, { useState } from 'react'
 
 import Selection from 'react-awesome-mouse-selector'
-// import 'react-awesome-mouse-selector/dist/index.css'
 
 import './index.css'
 

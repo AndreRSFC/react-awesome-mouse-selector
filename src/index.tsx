@@ -18,13 +18,7 @@ type Props = {
   onSelectionChange?: (elements: Array<number>) => void
   onHighlightChange?: (elements: Array<number>) => void
   elements: Array<HTMLElement>
-  offset?: {
-    top: number
-    left: number
-  }
   style?: string
-  zoom?: number
-  ignoreTargets?: Array<string>
   blockSelection?: boolean
   cellSize: {
     width: number
@@ -43,11 +37,6 @@ type State = {
   startPoint: Point | null
   endPoint: Point | null
   selectionBox: Box | null
-  offset: {
-    top: number
-    left: number
-  }
-  zoom: number
 }
 
 const twoButton = 2
@@ -57,11 +46,8 @@ function getOffset(props: Props) {
     top: 0,
     left: 0
   }
-  if (props.offset) {
-    offset = {
-      ...props.offset
-    }
-  } else if (props.target) {
+
+  if (props.target) {
     const boundingBox = props.target.getBoundingClientRect()
 
     offset.top = boundingBox.top + window.scrollY
@@ -71,7 +57,6 @@ function getOffset(props: Props) {
 }
 
 export default class Selection extends React.PureComponent<Props, State> {
-  // eslint-disable-line react/prefer-stateless-function
   props: Props
   state: State
   selectedChildren: Array<number>
@@ -84,9 +69,7 @@ export default class Selection extends React.PureComponent<Props, State> {
       mouseDown: false,
       startPoint: null,
       endPoint: null,
-      selectionBox: null,
-      offset: getOffset(props),
-      zoom: props.zoom || 1
+      selectionBox: null
     }
 
     this.selectedChildren = []
@@ -131,7 +114,6 @@ export default class Selection extends React.PureComponent<Props, State> {
 
   bind = () => {
     this.props.target.addEventListener('mousedown', this.onMouseDown)
-    this.props.target.addEventListener('touchstart', this.onTouchStart)
   }
 
   reset = () => {
@@ -140,32 +122,10 @@ export default class Selection extends React.PureComponent<Props, State> {
     }
   }
 
-  init = (e: { target: any }, x: number, y: number): boolean => {
-    if (this.props.ignoreTargets) {
-      const Target = e.target
-      if (!Target.matches) {
-        // polyfill matches
-        const defaultMatches = (s: string) =>
-          [].indexOf.call(window.document.querySelectorAll(s), this) !== -1
-        Target.matches =
-          Target.matchesSelector ||
-          Target.mozMatchesSelector ||
-          Target.msMatchesSelector ||
-          Target.oMatchesSelector ||
-          Target.webkitMatchesSelector ||
-          defaultMatches
-      }
-      if (
-        Target.matches &&
-        Target.matches(this.props.ignoreTargets.join(','))
-      ) {
-        return false
-      }
-    }
-
+  init = (x: number, y: number): boolean => {
     const startPoint = {
-      x: (x - this.state.offset.left) / this.state.zoom,
-      y: (y - this.state.offset.top) / this.state.zoom
+      x: x,
+      y: y 
     }
 
     const nextState = { mouseDown: true, startPoint: startPoint }
@@ -174,11 +134,6 @@ export default class Selection extends React.PureComponent<Props, State> {
     return true
   }
 
-  /**
-   * On root element mouse down
-   * The event should be a MouseEvent | TouchEvent, but flow won't get it...
-   * @private
-   */
   onMouseDown = (e: MouseEvent | any) => {
     if (
       this.props.disabled ||
@@ -188,37 +143,15 @@ export default class Selection extends React.PureComponent<Props, State> {
       return
     }
 
-    if (this.init(e, e.pageX, e.pageY)) {
+    if (this.init(e.pageX, e.pageY)) {
       window.document.addEventListener('mousemove', this.onMouseMove)
       window.document.addEventListener('mouseup', this.onMouseUp)
     }
   }
 
-  onTouchStart = (e: TouchEvent) => {
-    if (
-      this.props.disabled ||
-      !e.touches ||
-      !e.touches[0] ||
-      e.touches.length > 1
-    ) {
-      return
-    }
-
-    if (this.init(e, e.touches[0].pageX, e.touches[0].pageY)) {
-      window.document.addEventListener('touchmove', this.onTouchMove)
-      window.document.addEventListener('touchend', this.onMouseUp)
-    }
-  }
-
-  /**
-   * On document element mouse up
-   * @private
-   */
   onMouseUp = () => {
-    window.document.removeEventListener('touchmove', this.onTouchMove)
     window.document.removeEventListener('mousemove', this.onMouseMove)
     window.document.removeEventListener('mouseup', this.onMouseUp)
-    window.document.removeEventListener('touchend', this.onMouseUp)
 
     !this.props.blockSelection &&
       this.setState({
@@ -239,16 +172,12 @@ export default class Selection extends React.PureComponent<Props, State> {
     this.selectedChildren = []
   }
 
-  /**
-   * On document element mouse move
-   * @private
-   */
   onMouseMove = (e: MouseEvent) => {
     e.preventDefault()
     if (this.state.mouseDown) {
       const endPoint: Point = {
-        x: (e.pageX - this.state.offset.left) / this.state.zoom,
-        y: (e.pageY - this.state.offset.top) / this.state.zoom
+        x: e.pageX,
+        y: e.pageY 
       }
 
       this.setState({
@@ -260,38 +189,10 @@ export default class Selection extends React.PureComponent<Props, State> {
     }
   }
 
-  onTouchMove = (e: TouchEvent) => {
-    e.preventDefault()
-    if (this.state.mouseDown) {
-      const endPoint: Point = {
-        x: (e.touches[0].pageX - this.state.offset.left) / this.state.zoom,
-        y: (e.touches[0].pageY - this.state.offset.top) / this.state.zoom
-      }
-
-      this.setState({
-        endPoint,
-        selectionBox:
-          this.state.startPoint &&
-          this.calculateSelectionBox(this.state.startPoint, endPoint)
-      })
-    }
-  }
-
-  /**
-   * Calculate if two segments overlap in 1D
-   * @param lineA [min, max]
-   * @param lineB [min, max]
-   */
   lineIntersects = (lineA: number[], lineB: number[]): boolean =>
     lineA[1] >= lineB[0] && lineB[1] >= lineA[0]
 
-  /**
-   * Detect twoButtonD box intersection - the two boxes will intersect
-   * if their projections to both axis overlap
-   * @private
-   */
   boxIntersects = (boxA: Box, boxB: Box): boolean => {
-    // calculate coordinates of all points
     const boxAProjection = {
       x: [boxA.left, boxA.left + boxA.width],
       y: [boxA.top, boxA.top + boxA.height]
@@ -308,12 +209,6 @@ export default class Selection extends React.PureComponent<Props, State> {
     )
   }
 
-  /**
-   * Updates the selected items based on the
-   * collisions with selectionBox,
-   * also updates the highlighted items if they have changed
-   * @private
-   */
   updateCollidingChildren = (selectionBox: Box) => {
     this.selectedChildren = []
     if (this.props.elements) {
@@ -321,12 +216,8 @@ export default class Selection extends React.PureComponent<Props, State> {
         if (ref) {
           const refBox = ref.getBoundingClientRect()
           const tmpBox = {
-            top:
-              (refBox.top - this.state.offset.top + window.scrollY) /
-              this.state.zoom,
-            left:
-              (refBox.left - this.state.offset.left + window.scrollX) /
-              this.state.zoom,
+            top: (refBox.top + window.scrollY),
+            left: (refBox.left + window.scrollX),
             width: ref.clientWidth,
             height: ref.clientHeight
           }
@@ -354,10 +245,6 @@ export default class Selection extends React.PureComponent<Props, State> {
     }
   }
 
-  /**
-   * Calculate selection box dimensions
-   * @private
-   */
   calculateSelectionBox = (startPoint: Point, endPoint: Point) => {
     if (!this.state.mouseDown || !startPoint || !endPoint) {
       return null
@@ -457,9 +344,6 @@ export default class Selection extends React.PureComponent<Props, State> {
     }
   }
 
-  /**
-   * Render
-   */
   render() {
     let style
 
@@ -477,7 +361,7 @@ export default class Selection extends React.PureComponent<Props, State> {
 
     return (
       <div
-        className={`react-ds-border ${this.props.style}`}
+        className={`react-selector ${this.props.style}`}
         style={style}
         {...(this.state.selectionBox &&
         this.state.selectionBox.width + twoButton >=
